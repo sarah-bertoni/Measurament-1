@@ -1,0 +1,155 @@
+---
+title: "Measurement 1"
+format: html
+editor: visual
+---
+
+# Measurement 1
+
+```{r, warning=F, message=F}
+library(haven)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(tidyr)
+```
+
+### NA values
+
+How many missing values do the variables have ?
+
+```{r}
+scoreUS <- read_dta("Score_US.dta")
+
+str(scoreUS)
+
+ 
+missing_values <- (sapply(scoreUS, function(na) {sum(is.na(na))}))
+total_na_values <- scoreUS %>% summarise %>% sum(is.na(scoreUS))
+
+```
+
+##### Little map of missing values
+
+```{r}
+library(Amelia)
+miss_map <- missmap(scoreUS, main = "Missing values vs observed", col=c('black', 'grey'))
+```
+
+### Average score in Reading and Mathematics
+
+Compute the average score in Reading and Mathematics in the sample at the end of the academic year 2011.
+
+```{r}
+kable(scoreUS %>% summarise("average reading"= mean(X4RSCALK1, na.rm=T), "average math"= mean(X4MSCALK1, na.rm=T)))
+```
+
+### 2.a. Independence of Missing Values
+
+Are missing values independent from the other variables?
+
+```{r}
+regression <- scoreUS %>% select(c(X1RSCALK1, X1MSCALK1,X_CHSEX_R, XPARHIGHED_1, XPARHIGHED_2, X4RSCALK1, X4MSCALK1)) %>% mutate(missing_values=ifelse(is.na(X4MSCALK1), 1,0))
+
+lm <- regression %>% lm(formula= missing_values~ X1MSCALK1 + X1RSCALK1 + X_CHSEX_R + XPARHIGHED_1 + XPARHIGHED_2)
+
+summary(lm)
+```
+
+#### Interpretation of regression coefficients
+
+We computed a regression by regressing the dummy variable indicating whether an observation has missing values (1) or not (0) on the other variables of interest. The coefficents obtained represent the change in the probability of observing a missing value given a change in the independent variable.
+
+### 2.b. Biased mean?
+
+The mean could be biased if the variables identified as correlated with the number of missing values are also correlated with the mean in question, meaning with the variable reading and math scores. This would in fact mean that we would incur in the issue of selection bias, since the sample averages are computed only for observations with a high value of test score in the previous academic year.
+
+### 3. Correcting selection bias
+
+*Propose at least one way to take the missing values into account when estimating the average level of the 1st graders in Reading and Mathematics at the end of the year? If possible, implement your strategy and comment what you see.*
+
+In order to correct for the selection bias we could select a sample of observations by randomly selecting the same amount of observations for each quantile of previous year's test score in math and reading, de facto obtaining a random sample with no selection bias.
+
+#### Sampling quantiles in math
+
+```{r}
+quantiles <- quantile(regression$X1MSCALK1, probs = seq(0, 1, 0.25), na.rm = F)
+sample1 <- scoreUS_no_na[sample(nrow(scoreUS_no_na[scoreUS_no_na$X1MSCALK1<=22.8591,]), size=1000, replace = FALSE),]
+sample2 <- scoreUS_no_na[sample(nrow(scoreUS_no_na[22.8591< scoreUS_no_na$X1MSCALK1 & scoreUS_no_na$X1MSCALK1 <= 30.0621,]), size=1000, replace = FALSE),]
+sample3 <- scoreUS_no_na[sample(nrow(scoreUS_no_na[30.0621< scoreUS_no_na$X1MSCALK1 & scoreUS_no_na$X1MSCALK1<=37.7070,]), size=1000, replace = FALSE),]
+sample4 <- scoreUS_no_na[sample(nrow(scoreUS_no_na[37.7070<scoreUS_no_na$X1MSCALK1 & scoreUS_no_na$X1MSCALK1<=95.2312 ,]), size=1000, replace = FALSE),]
+
+sample_final_math <- bind_rows(sample1, sample2, sample3, sample4)
+
+
+
+```
+
+#### Quaniles in reading
+
+```{r}
+quantiles <- quantile(regression$X1RSCALK1, probs = seq(0, 1, 0.25), na.rm = F)
+scoreUS_no_na <- scoreUS[!is.na(scoreUS$X4MSCALK1),]
+sample1r <- scoreUS_no_na[sample(nrow(scoreUS_no_na[scoreUS_no_na$X1MSCALK1<=31.3501  ,]), size=1000, replace = FALSE),]
+sample2r <- scoreUS_no_na[sample(nrow(scoreUS_no_na[31.3501 < scoreUS_no_na$X1MSCALK1 & scoreUS_no_na$X1MSCALK1 <= 35.8406  ,]), size=1000, replace = FALSE), ]
+sample3r <- scoreUS_no_na[sample(nrow(scoreUS_no_na[35.8406 < scoreUS_no_na$X1MSCALK1 & scoreUS_no_na$X1MSCALK1<=41.6139  ,]), size=1000, replace = FALSE),]
+sample4r <- scoreUS_no_na[sample(nrow(scoreUS_no_na[41.6139 <scoreUS_no_na$X1MSCALK1 & scoreUS_no_na$X1MSCALK1<=90.3535  ,]), size=1000, replace = FALSE),]
+sample_final_read <- bind_rows(sample1r, sample2r, sample3r, sample4r)
+
+
+```
+
+#### Total averages with random sample
+
+```{r}
+final_average_math <- sample_final_math %>%  summarise("average math"= mean(X4MSCALK1))
+ final_average_read <- sample_final_read %>% summarise("average reading"= mean(X4RSCALK1))
+
+```
+
+### 4. Parental education
+
+*Assume the missing values were random. Compare the average scores at the end of the academic year in Reading and Mathematics of children whose parent 1 has a higher level of education to their peers. Are the scores statistically diff erent depending on the level of education of parent 1? and parent 2? Comment your results.*
+
+```{r}
+summary(scoreUS %>% lm(formula= X4RSCALK1~ XPARHIGHED_1 + XPARHIGHED_2))
+summary(scoreUS %>% lm(formula= X4MSCALK1~ XPARHIGHED_1 + XPARHIGHED_2))
+
+
+```
+
+### 5. Sampling probability
+
+Supposing that the probability for a school to be sampled is exactly proportional to its size, and assuming that the number of students sampled by school is fixed, can you show that the probability to be sampled is the same for all students?
+
+### 6. Clustering
+
+Compute the average score in Reading skills and Mathematics in the sample at the end of the academic year 2011 while adjusting the standard errors for clustering at the school level
+
+```{r}
+
+mean_read <- lm(X4RSCALK1 ~ 1, data = scoreUS)
+mean_read_cluster <- coeftest(mean_read, vcov = vcovCL, cluster = scoresUS$S4_ID)
+print(mean_read_cluster)
+ 
+mean_math <- lm(X4MSCALK1 ~ 1, data = scoresUS)
+mean_math_cluster <- coeftest(mean_math, vcov = vcovCL, cluster = scoresUS$S4_ID)
+print(mean_math_cluster)
+```
+### 7. Standard error in clustering
+7. Compare your estimates with and without clustering. Why are the standard errors systematically
+higher when you account for clustering? How could this be a problem (in this or other settings)? Why
+would one still opt for a sampling design that leads to clustering?(1 pts)
+
+
+```{r}
+library(miceadds)
+clustered_model<- scoreUS %>% lm.cluster(X4RSCALK1 ~ XPARHIGHED_1, data = scoreUS, cluster = scoreUS$S4_ID )
+```
+Compute the means
+```{r}
+summary(mean_read)
+summary(mean_math)
+```
+
+#### 8
