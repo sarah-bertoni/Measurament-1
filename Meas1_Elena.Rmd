@@ -1,0 +1,375 @@
+---
+title: "Homework 1 Measurement of Policy Outcomes"
+author: "Elena Sola-Vera Navarro"
+date: "2024-09-19"
+output:
+  pdf_document: default
+  html_document:
+    theme: cosmo
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = F)
+```
+
+
+# 1. Design Effect
+
+
+### Question 1.1.
+The design effect is a function of the intra-PSU coefficient correlation $\rho$ and the fix number of students $m$. It indicates the impact of using a given survey sampling method (here clustering) on the sample size, compared to the expected size using Simple Random Sampling.
+
+
+### Question 1.2.
+Plugging in the given values $\rho\approx0.22$ and $\frac{c1}{c2}\approx0.41$, we obtain $m^\ast= 12$
+
+
+### Question 1.3.
+First we compute the first derivative with respect to the unit cost ratio: 
+$$\frac{dm^\ast}{d\frac{c1}{c2}}= \frac{1}{2\sqrt\frac{c1}{c2}}\sqrt{\frac{1-\rho }{\rho}}>0$$
+Given that $\rho>0$ and assuming that unit costs $c1, c2>0$, the result is strictly positive which means that $m^\ast$ is increasing in $\frac{c1}{c2}$.
+
+
+### Question 1.4.
+Computing the first derivative with respect to the intra-PSU coefficient of correlation, we obtain: 
+$$\frac{dm^\ast}{d\rho}=-\frac{1}{2\rho^2}\sqrt\frac{\rho}{1-\rho}\sqrt{\frac{c1}{c2}}<0$$
+Given that $\rho>0$ and assuming that unit costs $c1, c2>0$, the result is strictly negative which means that $m^\ast$ is decreasing in $\rho$
+
+
+
+# 2. Missing values
+
+
+### Question 2.1.
+The dataset contains a total of 52117 missing values. Table 1 depicts the total number of missing values (NAs) per variable.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+setwd("C:\\Users\\esvn2\\OneDrive\\Documentos\\UNIVERSIDAD\\MASTER\\M1 PDD\\Measurement of policy outcomes\\Homework\\HW1")
+
+# Required packages
+library(tidyverse)
+library(haven)
+library(sandwich)
+library(lmtest)
+library(tinytex)
+library(kableExtra)
+library(huxtable)
+library(broom)
+library(float)
+
+scores_US <- read_dta("Score_US.dta")
+
+total_na_values <- sum(is.na(scores_US))
+
+missing_values<-scores_US%>%
+  summarise_all(funs(sum(is.na(.))))%>%
+  mutate(Total=sum(is.na(scores_US)))
+
+table <- t(missing_values)
+kable(table, format = "latex", caption="Number of NAs by variable, scores United States 2010", col.names = c("Variable", "Number of NA"), booktabs = TRUE, longtable = TRUE)
+```
+
+
+### Question 2.2.
+The average scores for Reading and Mathematics at period X4 are 70.0 and 63.4, respectively
+
+(a) To test the independence of math and reading kindergarten scores, child's sex, and parental education from the presence of missing values for the variables X4RSCALK1 and X4MSCALK1, we first create a dummy indicating whether an observation has missing values (1) or not (0). Then we undertake $\chi2$ tests for independence, as illustrated in Table 2. We observe that the presence of missing values for the variables X4RSCALK1 and X4MSCALK1 is not independent from the level of education of the second parent, although it does not depend on the rest of the variables considered here. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+scores_US <- scores_US %>%
+  mutate(MISSINGVAL = ifelse(is.na(X4RSCALK1)==1, 1, 0))
+
+chi1 <- chisq.test(scores_US$XPARHIGHED_1, scores_US$MISSINGVAL)
+chi2 <- chisq.test(scores_US$XPARHIGHED_2, scores_US$MISSINGVAL)
+chi3 <- chisq.test(scores_US$X_CHSEX_R, scores_US$MISSINGVAL)
+chi4 <- chisq.test(scores_US$X1RSCALK1, scores_US$MISSINGVAL)
+chi5 <- chisq.test(scores_US$X1MSCALK1, scores_US$MISSINGVAL)
+
+p_value <- data.frame(chi1$p.value,chi2$p.value, chi3$p.value, chi4$p.value,
+                     chi5$p.value)
+kable(p_value, format = "latex", caption="Chi-squared test results (p-values)", col.names = c("XPARHIGHED_1", "XPARHIGHED_2", "X_CHSEX_R", "X1RSCALK1", "X1MSCALK1"), booktabs = TRUE, longtable = TRUE)
+
+```
+
+(b) Given the structure of missing values, the mean is likely upward biased. Looking at the sample averages, we observe that they are computed only for observations with a high scores in the previous academic year, without taking into consideration students whose scores are not reported.
+
+
+
+### Question 2.3.
+One way of dealing with missing values is multiple imputation, that is estimating $m$ different values for the missing information point. This is a common technique to account for non-response and preserve the uncertainty of missing values in survey methodology. Ultimately, providing a single stochastic imputation is as if we were saying that this is the true observed value, which does not reflect the uncertainty of the imputation model and it underestimates the standard errors. 
+
+Some examples of multiple imputation include linear probability models, hot deck procedures and bootstrap methods depending on the type of the variable. However, these methods are rather complex and difficult to implement for the sake of this exercise.
+
+
+### Question 2.4
+Table 3 shows the regression outputs for averages in Math and Reading scores controlling for parental education. We observe that for both subjects, scores are statistically different depending on the level of education of their parents: children with higher-educated mothers have on average, 5.23 points more in Math and 5.47 points more in Reading than their peers. Similar effects are reported for the level of education of the second parent.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+model1 <- lm(X4MSCALK1 ~ XPARHIGHED_1 + XPARHIGHED_2, data = scores_US)
+model2 <- lm(X4RSCALK1 ~ XPARHIGHED_1 + XPARHIGHED_2, data = scores_US)
+
+outreg1 <- huxreg(model1,
+                 model2,
+                 error_format = "({std.error})",
+                 error_pos = "below",
+                 statistics = c(N = "nobs", R2 = "r.squared"), 
+                 stars = c(`***` = 0.01, `**` = 0.05, `*` = 0.1),
+                 note = "{stars}",
+                 align = "center") %>%
+  set_caption("Regression output for Math and Reading average scores")
+set_latex_float(outreg1, value = "H")
+```
+
+
+### Question 2.5.
+The probability of a student being sampled is the same for all schools and corresponds to: 
+$$P(\text{student being selected}) = \frac{M_i}{\sum_{i=1}^{859}M_i}*\frac{m}{M_i} = \frac{m}{\sum_{i=1}^{859}{M_i}}$$ 
+where $M_i$ is the total number of students in school $i\in[1,859]$ and $m$ represents the fixed number of students sampled per school
+
+
+### Question 2.6.
+Table 4 displays average scores after adjusting the standard errors for clustering at the school level. At the end of the 2011 academic year, the average reading score is 70.024 and the average math score is 63.404, regardless of standard error adjustment.
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+read1 <- lm(X4RSCALK1 ~ 1, data = scores_US)
+read2 <- coeftest(read1, vcov = vcovCL, cluster = scores_US$S4_ID)
+ 
+math1 <- lm(X4MSCALK1 ~ 1, data = scores_US)
+math2 <- coeftest(math1, vcov = vcovCL, cluster = scores_US$S4_ID)
+
+outreg2 <- huxreg(read1, read2, math1, math2,
+                 error_format = "({std.error})",
+                 error_pos = "below",
+                 statistics = c(N = "nobs"), 
+                 stars = c(`***` = 0.01, `**` = 0.05, `*` = 0.1),
+                 note = "Cluster-adjusted SE, {stars}",
+                 align = "center") %>%
+  set_caption("Regression output for Reading and Math average scores")
+outreg2
+```
+
+### Question 2.7.
+As previously mentioned, we obtain the same estimates in Reading and Math when accounting for clustering in the sample or not. However, the adjusted Standard Errors are twice as high as compared to the baseline SE. This difference is due to the design effect, which takes into consideration intra-PSU (in this case schools) correlation. Observations within the same cluster are likely to be more similar to each other than to observations from different clusters. Cluster-adjusted Standard Errors provide a correction of this design bias, leading to higher variance in the sample.
+
+A possible issue of inflated SE is that the computed p-values may not accurately reflect the true significance of the results. This can lead to incorrect conclusions about the effects being studied.
+
+Nonetheless, researchers may still prefer clustered sample designs because it reduces costs associated with data collection. This is particularly the case in large scale surveys, e.g. at the national level, where clustering is more resource efficient as compared to individual-level sampling across vast regions.
+
+
+### Question 2.8.
+In table 5 we observe that after adjusting for clustering, there are statistical differences in average Reading and Math Scores. The estimates are the same as those reported in **Question 2.4**, implying that students whose parents have a diploma from higher education have better grades on average than their peers. 
+
+Although the Standard Errors are higher after adjusting for intra-school clustering, the estimates are still statistically significant at the 1% level.
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+read3 <- lm(X4RSCALK1 ~ XPARHIGHED_1 + XPARHIGHED_2, data = scores_US)
+read3_cluster <- coeftest(read3, vcov = vcovCL, cluster = scores_US$S4_ID)
+
+math3 <- lm(X4MSCALK1 ~ XPARHIGHED_1 + XPARHIGHED_2, data = scores_US)
+math3_cluster <- coeftest(math3, vcov = vcovCL, cluster = scores_US$S4_ID)
+
+outreg3 <- huxreg(read3_cluster, math3_cluster,
+                  error_format = "({std.error})",
+                  error_pos = "below",
+                  statistics = c(N = "nobs", R2 = "r.squared"), 
+                  stars = c(`***` = 0.01, `**` = 0.05, `*` = 0.1),
+                  note = "Cluster-adjusted SE, {stars}",
+                  align = "center") %>%
+  set_caption("Regression output for Math and Reading average scores, 
+              controlling for parental education")
+set_latex_float(outreg3, value = "H")
+```
+
+### Question 2.9.
+Table 6 summarises regression results for questions 2.9 and 2.10. For models 1 and 2 which do not include Kindergarten outcomes, we find that age and having parents which achieved higher education are associated to higher average scores in both subjects. In contrast, household size has a negative relationship with average scores. The effect of sex differs by the subject: male students have on average lower scores in math and higher grades in reading than their female couterparts. Lastly, attending a public or private school does not have a statistically significant effect on scores.
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+read4 <- lm(X4RSCALK1 ~ X4AGE + X_CHSEX_R + X1PUBPRI + X4PUBPRI + X4LANGST + X4HTOTAL +
+                    XPARHIGHED_1 + XPARHIGHED_2 , data = scores_US)
+read4_cluster <- coeftest(read4, vcov = vcovCL, cluster = scores_US$S4_ID)
+
+math4 <- lm(X4MSCALK1 ~ X4AGE + X_CHSEX_R + X1PUBPRI + X4PUBPRI + X4LANGST + X4HTOTAL +
+                    XPARHIGHED_1 + XPARHIGHED_2 , data = scores_US)
+math4_cluster <- coeftest(math4, vcov = vcovCL, cluster = scores_US$S4_ID)
+```
+
+
+### Question 2.10.
+Controlling for the scores obtained in the beginning of the Kindergarten year (models 3 and 4), we obtain lower coefficients for XPARHIGHED 1 and XPARHIGHED 2 compared to the previous specifications, even though they remain positive and significant. One can further notice that a significant increase in the R2, indicating an increase in the power and robustness of our results. We see therefore that it is important to control for initial test scores, as these serve as a useful proxy for unobserved characteristics which might help explain test results in the X4 period.
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+read5 <- lm(X4RSCALK1 ~ X4AGE + X_CHSEX_R + X1PUBPRI + X4PUBPRI + X4LANGST 
+                  + X4HTOTAL + XPARHIGHED_1 + XPARHIGHED_2 + X1RSCALK1, data = scores_US)
+read5_cluster <- coeftest(read5, vcov = vcovCL, cluster = scores_US$S4_ID)
+
+math5 <- lm(X4MSCALK1 ~ X4AGE + X_CHSEX_R + X1PUBPRI + X4PUBPRI + X4LANGST 
+                  + X4HTOTAL + XPARHIGHED_1 + XPARHIGHED_2 + X1MSCALK1, data = scores_US)
+math5_cluster <- coeftest(math5, vcov = vcovCL, cluster = scores_US$S4_ID)
+outreg5 <- huxreg(read4, math4, read5, math5,
+                  error_format = "({std.error})",
+                  error_pos = "below",
+                  statistics = c(N = "nobs", R2 = "r.squared"), 
+                  stars = c(`***` = 0.01, `**` = 0.05, `*` = 0.1),
+                  note = "{stars}",
+                  align = "center") %>%
+  set_caption("Regression output for Math and Reading average scores, 
+              different specifications")
+set_latex_float(outreg5, value = "H")
+```
+
+# 3. R Script
+
+```{r, echo = TRUE, results = "hide", message = FALSE, warning = FALSE}
+#------------------------------------------------------------------------------- 
+# MEASUREMENT HOMEWORK 1
+#-------------------------------------------------------------------------------
+
+setwd("C:\\Users\\esvn2\\OneDrive\\Documentos\\UNIVERSIDAD\\MASTER\\M1 PDD\\Measurement of policy outcomes\\Homework\\HW1")
+
+# Required packages
+library(tidyverse)
+library(haven)
+library(sandwich)
+library(lmtest)
+library(tinytex)
+library(kableExtra)
+library(huxtable)
+library(broom)
+library(float)
+
+# Reading and exploring the data
+scores_US <- read_dta("Score_US.dta")
+View(scores_US)
+str(scores_US)
+
+
+# Ex 1: missing values
+scores_US <- read_dta("Score_US.dta")
+
+total_na_values <- sum(is.na(scores_US))
+
+missing_values<-scores_US%>%
+  summarise_all(funs(sum(is.na(.))))%>%
+  mutate(Total=sum(is.na(scores_US)))
+
+table <- t(missing_values)
+kable(table, format = "latex", caption="Number of NAs by variable, scores 
+      United States 2010", col.names = c("Variable", "Number of NA"), 
+      booktabs = TRUE, longtable = TRUE)
+
+
+# Ex 2: average score in reading and mathematics
+scores_US %>% summarise("average reading"= mean(X4RSCALK1, na.rm=T), 
+                        "average math"= mean(X4MSCALK1, na.rm=T))
+
+#### Perform chi-squared tests for independence
+scores_US <- scores_US %>%
+  mutate(MISSINGVAL = ifelse(is.na(X4RSCALK1)==1, 1, 0))
+
+chi1 <- chisq.test(scores_US$XPARHIGHED_1, scores_US$MISSINGVAL)
+chi2 <- chisq.test(scores_US$XPARHIGHED_2, scores_US$MISSINGVAL)
+chi3 <- chisq.test(scores_US$X_CHSEX_R, scores_US$MISSINGVAL)
+chi4 <- chisq.test(scores_US$X1RSCALK1, scores_US$MISSINGVAL)
+chi5 <- chisq.test(scores_US$X1MSCALK1, scores_US$MISSINGVAL)
+
+p_value <- data.frame(chi1$p.value,chi2$p.value, chi3$p.value, chi4$p.value,
+                      chi5$p.value)
+kable(p_value, format = "latex", caption="Chi-squared test results (p-values)", 
+      col.names = c("XPARHIGHED_1", "XPARHIGHED_2", "X_CHSEX_R", "X1RSCALK1", "X1MSCALK1"), 
+      booktabs = TRUE, longtable = TRUE)
+
+
+# Ex 4:
+model1 <- lm(X4MSCALK1 ~ XPARHIGHED_1 + XPARHIGHED_2, data = scores_US)
+model2 <- lm(X4RSCALK1 ~ XPARHIGHED_1 + XPARHIGHED_2, data = scores_US)
+
+outreg1 <- huxreg(model1,
+                  model2,
+                  error_format = "({std.error})",
+                  error_pos = "below",
+                  statistics = c(N = "nobs", R2 = "r.squared"), 
+                  stars = c(`***` = 0.01, `**` = 0.05, `*` = 0.1),
+                  note = "{stars}",
+                  align = "center") %>%
+  set_caption("Regression output for Math and Reading average scores")
+set_latex_float(outreg1, value = "H")
+
+# Ex 6:
+# Regression only with intercept which represents the average value of the dependent variable
+read1 <- lm(X4RSCALK1 ~ 1, data = scores_US)
+read2 <- coeftest(read1, vcov = vcovCL, cluster = scores_US$S4_ID)
+
+math1 <- lm(X4MSCALK1 ~ 1, data = scores_US)
+math2 <- coeftest(math1, vcov = vcovCL, cluster = scores_US$S4_ID)
+
+outreg2 <- huxreg(read1, read2, math1, math2,
+                  error_format = "({std.error})",
+                  error_pos = "below",
+                  statistics = c(N = "nobs"), 
+                  stars = c(`***` = 0.01, `**` = 0.05, `*` = 0.1),
+                  note = "Cluster-adjusted SE, {stars}",
+                  align = "center") %>%
+  set_caption("Regression output for Reading and Math average scores")
+outreg2
+
+
+# Ex 7:
+summary(read2)
+summary(math2)
+
+
+# Ex 8:
+# Mean scores controlling for parental education and adjusting for clustering
+read3 <- lm(X4RSCALK1 ~ XPARHIGHED_1 + XPARHIGHED_2, data = scores_US)
+read3_cluster <- coeftest(read3, vcov = vcovCL, cluster = scores_US$S4_ID)
+
+math3 <- lm(X4MSCALK1 ~ XPARHIGHED_1 + XPARHIGHED_2, data = scores_US)
+math3_cluster <- coeftest(math3, vcov = vcovCL, cluster = scores_US$S4_ID)
+
+outreg3 <- huxreg(read3_cluster, math3_cluster,
+                  error_format = "({std.error})",
+                  error_pos = "below",
+                  statistics = c(N = "nobs", R2 = "r.squared"), 
+                  stars = c(`***` = 0.01, `**` = 0.05, `*` = 0.1),
+                  note = "Cluster-adjusted SE, {stars}",
+                  align = "center") %>%
+  set_caption("Regression output for Math and Reading average scores, 
+              controlling for parental education")
+set_latex_float(outreg3, value = "H")
+
+
+# Ex 9: 
+# Regress scores in students' characteristics and parental education
+read4 <- lm(X4RSCALK1 ~ X4AGE + X_CHSEX_R + X1PUBPRI + X4PUBPRI + X4LANGST + X4HTOTAL +
+              XPARHIGHED_1 + XPARHIGHED_2 , data = scores_US)
+read4_cluster <- coeftest(read4, vcov = vcovCL, cluster = scores_US$S4_ID)
+
+math4 <- lm(X4MSCALK1 ~ X4AGE + X_CHSEX_R + X1PUBPRI + X4PUBPRI + X4LANGST + X4HTOTAL +
+              XPARHIGHED_1 + XPARHIGHED_2 , data = scores_US)
+math4_cluster <- coeftest(math4, vcov = vcovCL, cluster = scores_US$S4_ID)
+
+
+# Ex 10:
+# Adding scores at the beginning of kindergarden
+read5 <- lm(X4RSCALK1 ~ X4AGE + X_CHSEX_R + X1PUBPRI + X4PUBPRI + X4LANGST 
+            + X4HTOTAL + XPARHIGHED_1 + XPARHIGHED_2 + X1RSCALK1, data = scores_US)
+read5_cluster <- coeftest(read5, vcov = vcovCL, cluster = scores_US$S4_ID)
+
+math5 <- lm(X4MSCALK1 ~ X4AGE + X_CHSEX_R + X1PUBPRI + X4PUBPRI + X4LANGST 
+            + X4HTOTAL + XPARHIGHED_1 + XPARHIGHED_2 + X1MSCALK1, data = scores_US)
+math5_cluster <- coeftest(math5, vcov = vcovCL, cluster = scores_US$S4_ID)
+outreg5 <- huxreg(read5_cluster, math5_cluster,
+                  error_format = "({std.error})",
+                  error_pos = "below",
+                  statistics = c(N = "nobs"), 
+                  stars = c(`***` = 0.01, `**` = 0.05, `*` = 0.1),
+                  note = "Cluster-adjusted SE, {stars}",
+                  align = "center") %>%
+  set_caption("Regression output for Math and Reading average scores, 
+              controlling for parental education, sociodemographic characteristics,
+              and kindergarden scores")
+outreg5
+
+```
