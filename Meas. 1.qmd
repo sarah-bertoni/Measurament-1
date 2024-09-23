@@ -1,7 +1,13 @@
 ---
-title: "Measurement 1"
-format: html
-editor: visual
+title: "Measurement Assignement 1"
+autor: "Sarah Bertoni"
+date: "Fall 2024"
+output:
+  html_document:
+    theme: cosmo
+execute:
+  echo: false
+  warning: false
 ---
 
 # Measurement 1
@@ -12,67 +18,146 @@ library(tidyverse)
 library(knitr)
 library(kableExtra)
 library(tidyr)
+library(Amelia)
+library(sandwich)
+library(lmtest)
+library(miceadds)
+library(huxtable)
+
+
 ```
 
-### NA values
+## Part 1: Design Effect
+
+1.  The design effect is a function of the intra-PSU coefficient correlation $\rho$ and the fixed number of students $m$ drawn from each school.
+
+2.  Plugging in the given values $\rho\approx0.22$ and $\frac{c1}{c2}\approx0.41$, we obtain \$m\^\\ast= 12\$
+
+3.  To discern whether $m^\ast$ is increasing or decreasing in $\frac{c1}{c2}$ we compute the first derivative with respect to $\frac{c1}{c2}$ : $$\frac{dm^\ast}{d\frac{c1}{c2}}= \frac{1}{2\sqrt\frac{c1}{c2}}\sqrt{\frac{1-\rho }{\rho}}>0$$
+
+4.  To discern whether $m^\ast$ is increasing or decreasing in $\rho$ we compute the first derivative with respect to $\rho$: $$\frac{dm^\ast}{d\rho}=-\frac{1}{2\rho^2}\sqrt\frac{\rho}{1-\rho}\sqrt{\frac{c1}{c2}}<0$$
+
+    $m^\ast$ is decreasing in $\rho$
+
+## Part 2: missing values, missing values
 
 How many missing values do the variables have ?
 
+We display the number of missing values for each variable in the dataframe.
+
 ```{r}
 scoreUS <- read_dta("Score_US.dta")
-
-str(scoreUS)
-
  
-missing_values <- (sapply(scoreUS, function(na) {sum(is.na(na))}))
-total_na_values <- scoreUS %>% summarise %>% sum(is.na(scoreUS))
+kable((sapply(scoreUS, function(na) {sum(is.na(na))})), caption = "Missing values") %>%
+  kable_classic(full_width = F, html_font = "Garamound")
+
 
 ```
 
-##### Little map of missing values
+For a total of `r sum(is.na(scoreUS))` missing values.
+
+#### Adding negative values as missing values
+
+The dataframe containes some values that, while not being signaled as missing values, are to be considered as such since they are either negative values, which is implausible for every variable, or blanck spaces. We therefore change such values to NAs and compute the actual number of missing values
 
 ```{r}
-library(Amelia)
+scoreUS[scoreUS <0] <- NA
+kable(sapply(scoreUS, function(na) {sum(is.na(na))}), caption = "Missing values") %>%
+  kable_classic(full_width = F, html_font = "Garamound")
+
+```
+
+For a final total of `r sum(is.na(scoreUS))`missing values.
+
+```{r}
+sum(is.na(scoreUS))
+```
+
+##### Mapping the missing values
+
+```{r}
 miss_map <- missmap(scoreUS, main = "Missing values vs observed", col=c('black', 'grey'))
 ```
 
-### Average score in Reading and Mathematics
+### 2. Average score in Reading and Mathematics
 
-Compute the average score in Reading and Mathematics in the sample at the end of the academic year 2011.
+We compute the average score in Reading and Mathematics in the sample at the end of the academic year 2011.
 
 ```{r}
-kable(scoreUS %>% summarise("average reading"= mean(X4RSCALK1, na.rm=T), "average math"= mean(X4MSCALK1, na.rm=T)))
+kable(scoreUS %>% summarise("average reading"= mean(X4RSCALK1, na.rm=T), "average math"= mean(X4MSCALK1, na.rm=T))) %>%
+  kable_classic(full_width = F, html_font = "Garamound")
 ```
 
 ### 2.a. Independence of Missing Values
 
-Are missing values independent from the other variables?
+Are missing values independent from the other variables? In order to evaluate whether the presence of missing values for the variables`r X4MSCALK1` and `r X4RSCALK1` appear to depend on the value of other variables we execute a regression. We firstly create a new variable `r missing_values` which undertakes the value 1 when the value of the variable`r X4MSCALK1` is missing (since missing values for `r X4MSCALK1` and `r X4RSCALK1` overlap). We then proceed to regress the variables representing the child's sex, her scores at the beginning of the kindergarten year and the level of education of her parents on the binary missing values variable.
 
 ```{r}
-regression <- scoreUS %>% select(c(X1RSCALK1, X1MSCALK1,X_CHSEX_R, XPARHIGHED_1, XPARHIGHED_2, X4RSCALK1, X4MSCALK1)) %>% mutate(missing_values=ifelse(is.na(X4MSCALK1), 1,0))
+regression <- scoreUS %>%  select(c(X1RSCALK1, X1MSCALK1,X_CHSEX_R, XPARHIGHED_1, XPARHIGHED_2, X4RSCALK1, X4MSCALK1)) %>% mutate(missing_values=ifelse(is.na(X4MSCALK1), 1,0)) %>% mutate(parents_education = ifelse(XPARHIGHED_1 == 1 | XPARHIGHED_2 == 1, 1, 0))
 
-lm <- regression %>% lm(formula= missing_values~ X1MSCALK1 + X1RSCALK1 + X_CHSEX_R + XPARHIGHED_1 + XPARHIGHED_2)
+lm1 <- regression %>% lm(formula= missing_values~ X1MSCALK1 + X1RSCALK1 + X_CHSEX_R + XPARHIGHED_1+ XPARHIGHED_2)
 
-summary(lm)
+huxreg(summary(lm1))
+```
+
+```{r}
+lm2 <- regression %>% lm(formula= missing_values~ X1MSCALK1 + X1RSCALK1 + X_CHSEX_R + parents_education)
+huxreg(summary(lm2))
+```
+
+#### Logistic regression
+
+```{r}
+lm3 <- regression %>% glm(formula= missing_values~ X1MSCALK1 + X1RSCALK1 + X_CHSEX_R + XPARHIGHED_1+ XPARHIGHED_2, family = binomial)
+(summary(lm3))
 ```
 
 #### Interpretation of regression coefficients
 
-We computed a regression by regressing the dummy variable indicating whether an observation has missing values (1) or not (0) on the other variables of interest. The coefficents obtained represent the change in the probability of observing a missing value given a change in the independent variable.
+We computed a regression by regressing the dummy variable indicating whether an observation has missing values (1) or not (0) on the other variables of interest. The coefficients obtained represent the change in the probability of observing a missing value given a change in the independent variable. The only statistically significant relationship that we observe are given by the math score, of which an additional point decreases the probability of having a missing value by 0.002 percentage point, and the level of education of parent 2.
 
-### 2.b. Biased mean?
+#### Another method: Chi squared
+
+Create a contingency table for missing values in X4RSCALK1 and child's sex and for missing values in X4RSCALK1 and parent's education
+
+```{r}
+ 
+contingency_table_sex <- table(is.na(scoreUS$X4RSCALK1), scoreUS$X_CHSEX_R)
+contingency_table_parent1 <- table(is.na(scoreUS$X4RSCALK1), scoreUS$XPARHIGHED_1)
+contingency_table_parent2 <- table(is.na(scoreUS$X4RSCALK1), scoreUS$XPARHIGHED_2)
+
+```
+
+#### Perform chi-squared tests for independence
+
+```{r}
+chi_sex <- chisq.test(contingency_table_sex)
+chi_parent1<- chisq.test(contingency_table_parent1)
+chi_parent2 <- chisq.test(contingency_table_parent2)
+
+p_value <-data.frame(chi_sex$p.value,chi_parent1$p.value, chi_parent2$p.value)
+kable(p_value %>% pivot_longer(cols= everything(),names_to = 'test', values_to = 'p value')) %>%
+  kable_classic(full_width = F, html_font = "Garamound")
+
+
+
+```
+
+We observe that the presence of NAs values is not dependant from the child's sex and the education of the first parent, but is not independent from the education of the second parent. Such observation given by the p value computed through chi squared confirm the results obtained in the multiple regression.
+
+### 2b) Biased mean?
 
 The mean could be biased if the variables identified as correlated with the number of missing values are also correlated with the mean in question, meaning with the variable reading and math scores. This would in fact mean that we would incur in the issue of selection bias, since the sample averages are computed only for observations with a high value of test score in the previous academic year.
 
 ### 3. Correcting selection bias
-
-*Propose at least one way to take the missing values into account when estimating the average level of the 1st graders in Reading and Mathematics at the end of the year? If possible, implement your strategy and comment what you see.*
 
 In order to correct for the selection bias we could select a sample of observations by randomly selecting the same amount of observations for each quantile of previous year's test score in math and reading, de facto obtaining a random sample with no selection bias.
 
 #### Sampling quantiles in math
 
 ```{r}
+scoreUS_no_na <- scoreUS[!is.na(scoreUS$X4MSCALK1),]
+
 quantiles <- quantile(regression$X1MSCALK1, probs = seq(0, 1, 0.25), na.rm = F)
 sample1 <- scoreUS_no_na[sample(nrow(scoreUS_no_na[scoreUS_no_na$X1MSCALK1<=22.8591,]), size=1000, replace = FALSE),]
 sample2 <- scoreUS_no_na[sample(nrow(scoreUS_no_na[22.8591< scoreUS_no_na$X1MSCALK1 & scoreUS_no_na$X1MSCALK1 <= 30.0621,]), size=1000, replace = FALSE),]
@@ -85,11 +170,10 @@ sample_final_math <- bind_rows(sample1, sample2, sample3, sample4)
 
 ```
 
-#### Quaniles in reading
+#### Quantiles in reading
 
 ```{r}
 quantiles <- quantile(regression$X1RSCALK1, probs = seq(0, 1, 0.25), na.rm = F)
-scoreUS_no_na <- scoreUS[!is.na(scoreUS$X4MSCALK1),]
 sample1r <- scoreUS_no_na[sample(nrow(scoreUS_no_na[scoreUS_no_na$X1MSCALK1<=31.3501  ,]), size=1000, replace = FALSE),]
 sample2r <- scoreUS_no_na[sample(nrow(scoreUS_no_na[31.3501 < scoreUS_no_na$X1MSCALK1 & scoreUS_no_na$X1MSCALK1 <= 35.8406  ,]), size=1000, replace = FALSE), ]
 sample3r <- scoreUS_no_na[sample(nrow(scoreUS_no_na[35.8406 < scoreUS_no_na$X1MSCALK1 & scoreUS_no_na$X1MSCALK1<=41.6139  ,]), size=1000, replace = FALSE),]
@@ -109,47 +193,147 @@ final_average_math <- sample_final_math %>%  summarise("average math"= mean(X4MS
 
 ### 4. Parental education
 
-*Assume the missing values were random. Compare the average scores at the end of the academic year in Reading and Mathematics of children whose parent 1 has a higher level of education to their peers. Are the scores statistically diff erent depending on the level of education of parent 1? and parent 2? Comment your results.*
+*Assume the missing values were random. Compare the average scores at the end of the academic year in Reading and Mathematics of children whose parent 1 has a higher level of education to their peers. Are the scores statistically different depending on the level of education of parent 1? and parent 2? Comment your results.*
 
 ```{r}
-summary(scoreUS %>% lm(formula= X4RSCALK1~ XPARHIGHED_1 + XPARHIGHED_2))
-summary(scoreUS %>% lm(formula= X4MSCALK1~ XPARHIGHED_1 + XPARHIGHED_2))
+huxreg(summary(scoreUS %>% lm(formula= X4RSCALK1~ XPARHIGHED_1 + XPARHIGHED_2)))
 
 
 ```
 
+```{r}
+huxreg(summary(scoreUS %>% lm(formula= X4MSCALK1~ XPARHIGHED_1 + XPARHIGHED_2))
+)
+```
+
 ### 5. Sampling probability
 
-Supposing that the probability for a school to be sampled is exactly proportional to its size, and assuming that the number of students sampled by school is fixed, can you show that the probability to be sampled is the same for all students?
+Supposing that the probability for a school to be sampled is exactly proportional to its size and assuming that the number of students sampled by school is fixed, the probability of a student being selected is obtained by the probability of their school being selected times the probability of being selected conditional on their school being selected:
+
+Probability of a school being selected: $P(\text{school})=\frac{M_i}{\sum_{1}^{n=N} M_i}$, where $M_i$ is the size of each school $i$ and the denominator represent the totality of the student population summing the sizes of every school. Then we can calculate the probability of a student being selected in the sample of 20 students per school: $$P(\text{student selected})=P(\text{school})*P(\text{student}|\text{school})=\frac{M_i}{\sum_{i=1}^{N} M_i} \cdot \frac{20}{M_i} = \frac{20}{\sum_{i=1}^{n=N} M_i}$$
+
+Therefore proving that the probability of a student of being seòected is the same for every student.
 
 ### 6. Clustering
 
 Compute the average score in Reading skills and Mathematics in the sample at the end of the academic year 2011 while adjusting the standard errors for clustering at the school level
 
 ```{r}
-
-mean_read <- lm(X4RSCALK1 ~ 1, data = scoreUS)
-mean_read_cluster <- coeftest(mean_read, vcov = vcovCL, cluster = scoresUS$S4_ID)
-print(mean_read_cluster)
+scoreUS <- scoreUS %>%  filter(!is.na(S4_ID))
+mean_read <- lm(X4RSCALK1 ~ 1, data = (scoreUS))
+mean_read_cluster <- coeftest(mean_read, vcov = vcovCL, cluster = scoreUS$S4_ID)
+huxreg(mean_read_cluster)
  
-mean_math <- lm(X4MSCALK1 ~ 1, data = scoresUS)
-mean_math_cluster <- coeftest(mean_math, vcov = vcovCL, cluster = scoresUS$S4_ID)
-print(mean_math_cluster)
+
+
 ```
+
+```{r}
+mean_math <- lm(X4MSCALK1 ~ 1, data = scoreUS)
+mean_math_cluster <- coeftest(mean_math, vcov = vcovCL, cluster = scoreUS$S4_ID)
+huxreg(mean_math_cluster)
+```
+
 ### 7. Standard error in clustering
-7. Compare your estimates with and without clustering. Why are the standard errors systematically
-higher when you account for clustering? How could this be a problem (in this or other settings)? Why
-would one still opt for a sampling design that leads to clustering?(1 pts)
 
+Compare your estimates with and without clustering. Why are the standard errors systematically higher when you account for clustering? How could this be a problem (in this or other settings)? Why would one still opt for a sampling design that leads to clustering?
+
+#### Reading mean
 
 ```{r}
-library(miceadds)
-clustered_model<- scoreUS %>% lm.cluster(X4RSCALK1 ~ XPARHIGHED_1, data = scoreUS, cluster = scoreUS$S4_ID )
-```
-Compute the means
-```{r}
-summary(mean_read)
-summary(mean_math)
+(huxreg(mean_read))
+
 ```
 
-#### 8
+#### Mean Math
+
+```{r}
+huxreg(mean_math)
+
+```
+
+### 8. Average scores conditional on parents education
+
+Compare the average scores at the end of the academic year in Reading skills and Mathematics of children whose parent 1 has a higher education level to their peers, while accounting for clustering. Are the scores statistically different depending on the education level of the student's parent 1? Same question with parent 2. Compare your conclusion to the results found in 4 and comment.
+
+#### Reading model 1
+
+```{r}
+model1_read <- lm(X4RSCALK1 ~ XPARHIGHED_1, data = scoreUS)
+model1_read_cluster <- coeftest(model1_read, vcov = vcovCL, cluster = scoreUS$S4_ID, )
+huxreg(model1_read_cluster)
+
+
+```
+
+#### Reading model 2
+
+```{r}
+model2_read <- lm(X4RSCALK1 ~ XPARHIGHED_2, data = scoreUS)
+model2_read_cluster <- coeftest(model2_read, vcov = vcovCL, cluster = scoreUS$S4_ID)
+huxreg(model2_read_cluster)
+
+```
+
+#### Math model 1
+
+```{r}
+
+model1_math <- lm(X4MSCALK1 ~ XPARHIGHED_1, data = scoreUS)
+model1_math_cluster <- coeftest(model1_math, vcov = vcovCL, cluster = scoreUS$S4_ID)
+huxreg(model1_math_cluster)
+
+```
+
+#### Math model 2
+
+```{r}
+
+model2_math <- lm(X4MSCALK1 ~ XPARHIGHED_2, data = scoreUS)
+model2_math_cluster <- coeftest(model2_math, vcov = vcovCL, cluster = scoreUS$S4_ID)
+huxreg(model2_math_cluster)
+```
+
+### 9.Regression: not controlling for scores
+
+#### Reading model 3
+
+```{r}
+model3_read <- lm(X4RSCALK1 ~ X4AGE + X_CHSEX_R + X1PUBPRI + X4PUBPRI + X4LANGST + X4HTOTAL +
+                    XPARHIGHED_1 + XPARHIGHED_2 , data = scoreUS)
+model3_read_cluster <- coeftest(model3_read, vcov = vcovCL, cluster = scoreUS$S4_ID)
+huxreg(model3_read_cluster)
+
+
+```
+
+#### Math model 3
+
+```{r}
+model3_math <- lm(X4MSCALK1 ~ X4AGE + X_CHSEX_R + X1PUBPRI + X4PUBPRI + X4LANGST + X4HTOTAL +
+                    XPARHIGHED_1 + XPARHIGHED_2 , data = scoreUS)
+model3_math_cluster <- coeftest(model3_math, vcov = vcovCL, cluster = scoreUS$S4_ID)
+huxreg(model3_math_cluster)
+```
+
+### 10. Regression: controlling for scores
+
+#### Reading model 4
+
+```{r}
+model4_read <- lm(X4RSCALK1 ~ X4AGE + X_CHSEX_R + X1PUBPRI + X4PUBPRI + X4LANGST 
+                  + X4HTOTAL + XPARHIGHED_1 + XPARHIGHED_2 + X1RSCALK1, data = scoreUS)
+model4_read_cluster <- coeftest(model4_read, vcov = vcovCL, cluster = scoreUS$S4_ID)
+huxreg(model4_read_cluster)
+
+```
+
+#### Math model 4
+
+```{r}
+
+model4_math <- lm(X4MSCALK1 ~ X4AGE + X_CHSEX_R + X1PUBPRI + X4PUBPRI + X4LANGST 
+                  + X4HTOTAL + XPARHIGHED_1 + XPARHIGHED_2 + X1MSCALK1, data = scoreUS)
+model4_math_cluster <- coeftest(model3_math, vcov = vcovCL, cluster = scoreUS$S4_ID)
+huxreg(model4_math_cluster)
+```
