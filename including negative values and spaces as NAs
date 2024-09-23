@@ -1,0 +1,8 @@
+scoreUS[scoreUS <0] <- NA
+kable(sapply(scoreUS, function(na) {sum(is.na(na))}), caption = "Missing values") %>%
+  kable_classic(full_width = F, html_font = "Garamound")
+
+### For the clustering I create a new dataframe
+scoreUS <- scoreUS %>%  filter(!is.na(S4_ID))
+#### and then the rest is the same
+mean_read <- lm(X4RSCALK1 ~ 1, data = (scoreUS))
